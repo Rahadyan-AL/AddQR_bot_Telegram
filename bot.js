@@ -1,3 +1,4 @@
+require('dotenv').config();
 const TelegramBotLib = require('node-telegram-bot-api');
 const TelegramBot = TelegramBotLib.default || TelegramBotLib;
 const { PDFDocument } = require('pdf-lib');
@@ -8,8 +9,7 @@ const dns = require('dns');
 // Paksa IPv4 agar tidak timeout di jaringan yang tidak support IPv6
 dns.setDefaultResultOrder('ipv4first');
 
-// Ganti dengan token dari BotFather
-const token = '8598799431:AAFYruHpNYg6nrVzWnZwsI8M9Yqpso_yJCk'; 
+const token = process.env.BOT_TOKEN;
 // Inisialisasi tanpa polling dulu
 const bot = new TelegramBot(token, { polling: false });
 
