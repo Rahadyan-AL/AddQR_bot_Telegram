@@ -15,6 +15,11 @@ if (!token) {
     process.exit(1);
 }
 
+// Debug: Tampilkan token ter-masking untuk memastikan formatnya benar (tidak ada tanda kutip/spasi)
+const cleanToken = token.trim();
+console.log(`Debug Token: "${cleanToken.substring(0, 6)}...${cleanToken.substring(cleanToken.length - 6)}" (Panjang: ${cleanToken.length} karakter)`);
+
+
 // Inisialisasi tanpa polling dulu
 const bot = new TelegramBot(token, { polling: false });
 
