@@ -15,11 +15,6 @@ if (!token) {
     process.exit(1);
 }
 
-// Debug: Tampilkan token ter-masking untuk memastikan formatnya benar (tidak ada tanda kutip/spasi)
-const cleanToken = token.trim();
-console.log(`Debug Token: "${cleanToken.substring(0, 6)}...${cleanToken.substring(cleanToken.length - 6)}" (Panjang: ${cleanToken.length} karakter)`);
-
-
 // Inisialisasi tanpa polling dulu
 const bot = new TelegramBot(token, { polling: false });
 
@@ -54,13 +49,13 @@ const qrPath = path.join(__dirname, 'qr_code.jpg');
 bot.on('photo', async (msg) => {
     const chatId = msg.chat.id;
     // Ambil resolusi tertinggi
-    const photo = msg.photo[msg.photo.length - 1]; 
-    
+    const photo = msg.photo[msg.photo.length - 1];
+
     try {
         const fileLink = await bot.getFileLink(photo.file_id);
         const response = await fetch(fileLink);
         const buffer = await response.arrayBuffer();
-        
+
         // Simpan dan timpa file QR lama
         fs.writeFileSync(qrPath, Buffer.from(buffer));
         bot.sendMessage(chatId, 'QR Code berhasil disimpan/diperbarui!');
@@ -72,7 +67,7 @@ bot.on('photo', async (msg) => {
 // 2. Menangani Dokumen (PDF)
 bot.on('document', async (msg) => {
     const chatId = msg.chat.id;
-    
+
     if (msg.document.mime_type !== 'application/pdf') {
         return bot.sendMessage(chatId, 'Harap kirim file dalam format PDF.');
     }
@@ -83,7 +78,7 @@ bot.on('document', async (msg) => {
 
     try {
         bot.sendMessage(chatId, 'Memproses PDF...');
-        
+
         // Unduh PDF
         const fileLink = await bot.getFileLink(msg.document.file_id);
         const pdfResponse = await fetch(fileLink);
@@ -92,7 +87,7 @@ bot.on('document', async (msg) => {
         // Load PDF dan QR Code
         const pdfDoc = await PDFDocument.load(pdfBuffer);
         const qrImageBytes = fs.readFileSync(qrPath);
-        
+
         // Deteksi format gambar QR (JPG/PNG)
         let qrImage;
         try {
@@ -107,9 +102,9 @@ bot.on('document', async (msg) => {
 
         // --- SESUAIKAN KOORDINAT INI ---
         // (0,0) ada di sudut KIRI BAWAH halaman
-        const xCoord = 510; 
-        const yCoord = 320; 
-        const qrSize = 22; 
+        const xCoord = 510;
+        const yCoord = 320;
+        const qrSize = 22;
 
         firstPage.drawImage(qrImage, {
             x: xCoord,
@@ -125,9 +120,9 @@ bot.on('document', async (msg) => {
 
         // Kirim balik ke user
         await bot.sendDocument(chatId, outputPath);
-        
+
         // Hapus file output setelah dikirim (opsional)
-        try { fs.unlinkSync(outputPath); } catch (_) {}
+        try { fs.unlinkSync(outputPath); } catch (_) { }
 
     } catch (error) {
         console.error(error);
