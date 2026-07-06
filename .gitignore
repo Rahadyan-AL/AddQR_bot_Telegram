@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# File QR yang tersimpan secara lokal (data sensitif)
+qr_code.jpg
+qr_code.png
+
+# File output sementara
+output.pdf
+
+# Environment & secrets (jika nanti pakai .env)
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
