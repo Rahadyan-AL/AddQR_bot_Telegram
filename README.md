@@ -60,19 +60,28 @@ cd AddQR_bot_Telegram
 npm install
 ```
 
-### 3. Konfigurasi Token Bot
-Buka file `bot.js` dan ganti token dengan token bot milikmu:
-```js
-// bot.js, baris 12
-const token = 'ISI_TOKEN_BOT_KAMU_DI_SINI';
+### 3. Konfigurasi Environment (.env)
+Buat file `.env` di direktori utama proyek (Anda dapat menyalin dari `.env.example`) dan masukkan token bot Telegram Anda serta port server:
+```env
+BOT_TOKEN=token_bot_kamu_di_sini
+PORT=3000
 ```
 
 ### 4. Jalankan Bot
+Jalankan perintah start npm:
+```bash
+npm start
+```
+Atau jalankan bot.js secara langsung dengan Node:
 ```bash
 node bot.js
 ```
 
-> Output yang diharapkan: `Bot sedang berjalan...`
+> Output yang diharapkan:
+> ```
+> Web server jalan
+> Bot sedang berjalan...
+> ```
 
 ---
 
@@ -114,25 +123,12 @@ AddQR_bot_Telegram/
 
 ---
 
-## 🔒 Keamanan
+## 🔒 Keamanan & Deployment
 
-> [!WARNING]
-> Jangan pernah meng-commit token bot kamu ke repositori publik! Simpan token di variabel environment atau file `.env` yang sudah di-gitignore.
-
-Cara yang lebih aman menggunakan `.env`:
-```bash
-# Install dotenv
-npm install dotenv
-```
-```js
-// Di bot.js
-require('dotenv').config();
-const token = process.env.BOT_TOKEN;
-```
-```env
-# File .env (jangan di-commit!)
-BOT_TOKEN=token_bot_kamu_di_sini
-```
+> [!IMPORTANT]
+> - **Variabel Lingkungan (`.env`):** Selalu simpan token sensitif seperti `BOT_TOKEN` di file `.env`. File ini sudah otomatis dimasukkan ke `.gitignore` agar tidak ter-upload ke repositori publik.
+> - **Web Server (Express):** Proyek ini dilengkapi dengan Express server sederhana agar bot tetap aktif (keep-alive) saat dideploy di platform cloud (seperti Render, Railway, Koyeb, dll) dengan mendengarkan port yang disediakan (`PORT` atau default `3000`).
+> - **Riwayat Git (Git History):** Jika Anda sebelumnya sempat meng-commit token asli ke Git secara hardcode, pastikan Anda segera meregenerasi token baru di [@BotFather](https://t.me/BotFather) agar token lama dinonaktifkan secara permanen.
 
 ---
 
