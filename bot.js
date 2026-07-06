@@ -10,19 +10,24 @@ const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
 const token = process.env.BOT_TOKEN;
+if (!token) {
+    console.error('ERROR: BOT_TOKEN tidak ditemukan di file .env!');
+    process.exit(1);
+}
+
 // Inisialisasi tanpa polling dulu
 const bot = new TelegramBot(token, { polling: false });
 
 // Hapus webhook aktif (jika ada) lalu mulai polling
 // dropPendingUpdates: true agar update lama tidak diproses ulang
 bot.deleteWebhook({ drop_pending_updates: true })
-    .then(() => {
+    .catch((err) => {
+        // 404 = tidak ada webhook (wajar untuk token baru), lanjutkan saja
+        console.warn('[deleteWebhook] Warning:', err.message);
+    })
+    .finally(() => {
         bot.startPolling();
         console.log('Bot sedang berjalan...');
-    })
-    .catch((err) => {
-        console.error('Gagal menghapus webhook:', err.message);
-        process.exit(1);
     });
 
 // Tangani error polling agar bot tidak crash
