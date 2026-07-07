@@ -53,8 +53,21 @@ export default async function handler(req, res) {
             try { qrImage = await pdfDoc.embedJpg(qrBuffer); } 
             catch (e) { qrImage = await pdfDoc.embedPng(qrBuffer); }
 
+            // Ambil halaman pertama dan ukurannya secara dinamis
             const firstPage = pdfDoc.getPages()[0];
-            firstPage.drawImage(qrImage, { x: 510, y: 320, width: 22, height: 22 });
+            const { width, height } = firstPage.getSize();
+
+            // Hitung posisi berdasarkan persentase (berpatokan dari koordinat suksesmu x:510, y:320 pada A4)
+            const xCoord = width * 0.857;  // Kolom Tanda Tangan (~85.7% dari lebar kertas)
+            const yCoord = height * 0.380; // Baris Lab Bioindustri (~38% dari tinggi kertas)
+            const qrSize = width * 0.037;  // Ukuran QR proporsional terhadap lebar kertas (setara size 22)
+
+            firstPage.drawImage(qrImage, {
+                x: xCoord,
+                y: yCoord,
+                width: qrSize,
+                height: qrSize,
+            });
 
             const pdfBytes = await pdfDoc.save();
 
