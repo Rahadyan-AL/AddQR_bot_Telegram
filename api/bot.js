@@ -2,13 +2,12 @@ const TelegramBotLib = require('node-telegram-bot-api');
 const TelegramBot = TelegramBotLib.default || TelegramBotLib;
 const { PDFDocument } = require('pdf-lib');
 const { createClient } = require('@supabase/supabase-js');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
-// Inisialisasi Bot & Supabase (Tanpa polling)
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 export default async function handler(req, res) {
-    // Vercel hanya memproses request POST dari webhook Telegram
     if (req.method !== 'POST') return res.status(200).send('Bot berjalan.');
 
     const msg = req.body.message;
@@ -17,18 +16,15 @@ export default async function handler(req, res) {
     const chatId = msg.chat.id;
 
     try {
-        // 1. Menangani Command /start
         if (msg.text && msg.text.startsWith('/start')) {
-            await bot.sendMessage(chatId, 'Halo! Silakan upload foto QR Code Anda terlebih dahulu.');
+            await bot.sendMessage(chatId, 'Halo! Bot sudah aktif dan siap digunakan. Silakan upload foto QR Code Anda terlebih dahulu.');
         }
-        // 2. Menangani Gambar (QR Code)
         else if (msg.photo) {
             const photo = msg.photo[msg.photo.length - 1];
             const fileLink = await bot.getFileLink(photo.file_id);
             const response = await fetch(fileLink);
             const buffer = await response.arrayBuffer();
             
-            // Upload & timpa file qr_code.jpg di Supabase
             const { error } = await supabase.storage
                 .from('bot-data')
                 .upload('qr_code.jpg', buffer, { upsert: true });
@@ -36,46 +32,50 @@ export default async function handler(req, res) {
             if (error) throw error;
             await bot.sendMessage(chatId, 'QR Code berhasil disimpan/diperbarui!');
         } 
-        
-        // 2. Menangani Dokumen (PDF)
         else if (msg.document && msg.document.mime_type === 'application/pdf') {
             await bot.sendMessage(chatId, 'Memproses PDF...');
             
-            // Unduh PDF dari Telegram
             const pdfLink = await bot.getFileLink(msg.document.file_id);
             const pdfRes = await fetch(pdfLink);
             const pdfBuffer = await pdfRes.arrayBuffer();
 
-            // Unduh QR dari Supabase
+            // 1. Lacak koordinat teks "Bioindustri"
+            const dataUint8Array = new Uint8Array(pdfBuffer);
+            const loadingTask = pdfjsLib.getDocument({ data: dataUint8Array });
+            const pdfDocPdfjs = await loadingTask.promise;
+            const pagePdfjs = await pdfDocPdfjs.getPage(1);
+            const textContent = await pagePdfjs.getTextContent();
+            
+            let targetY = 320; // Titik default jika teks tidak ditemukan
+            for (const item of textContent.items) {
+                if (item.str && item.str.includes('Bioindustri')) {
+                    targetY = item.transform[5]; // Mengambil koordinat Y (vertikal)
+                    break;
+                }
+            }
+
             const { data, error } = await supabase.storage.from('bot-data').download('qr_code.jpg');
             if (error) return bot.sendMessage(chatId, 'Upload foto QR Code terlebih dahulu.');
             const qrBuffer = await data.arrayBuffer();
 
-            // Load PDF dan QR Code
+            // 2. Tempel QR di koordinat yang ditemukan
             const pdfDoc = await PDFDocument.load(pdfBuffer);
             let qrImage;
             try { qrImage = await pdfDoc.embedJpg(qrBuffer); } 
             catch (e) { qrImage = await pdfDoc.embedPng(qrBuffer); }
 
-            // Ambil halaman pertama dan ukurannya secara dinamis
             const firstPage = pdfDoc.getPages()[0];
-            const { width, height } = firstPage.getSize();
+            const { width } = firstPage.getSize();
 
-            // Hitung posisi berdasarkan persentase (berpatokan dari koordinat suksesmu x:510, y:320 pada A4)
-            const xCoord = width * 0.857;  // Kolom Tanda Tangan (~85.7% dari lebar kertas)
-            const yCoord = height * 0.380; // Baris Lab Bioindustri (~38% dari tinggi kertas)
-            const qrSize = width * 0.037;  // Ukuran QR proporsional terhadap lebar kertas (setara size 22)
-
-            firstPage.drawImage(qrImage, {
-                x: xCoord,
-                y: yCoord,
-                width: qrSize,
-                height: qrSize,
+            firstPage.drawImage(qrImage, { 
+                x: width - 85,    // Kolom tanda tangan di kanan
+                y: targetY - 5,   // Sejajar dengan baris teks
+                width: 22, 
+                height: 22 
             });
 
             const pdfBytes = await pdfDoc.save();
 
-            // Kirim balik ke user menggunakan nama file asli
             await bot.sendDocument(chatId, Buffer.from(pdfBytes), {}, { 
                 filename: msg.document.file_name || 'Output_Signed.pdf', 
                 contentType: 'application/pdf' 
@@ -86,6 +86,5 @@ export default async function handler(req, res) {
         await bot.sendMessage(chatId, 'Terjadi kesalahan saat memproses dokumen.');
     }
 
-    // Wajib merespon 200 OK agar Telegram tidak mengulang webhook terus-menerus
     res.status(200).send('OK');
 }
