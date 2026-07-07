@@ -1,4 +1,5 @@
-const TelegramBot = require('node-telegram-bot-api');
+const TelegramBotLib = require('node-telegram-bot-api');
+const TelegramBot = TelegramBotLib.default || TelegramBotLib;
 const { PDFDocument } = require('pdf-lib');
 const { createClient } = require('@supabase/supabase-js');
 
