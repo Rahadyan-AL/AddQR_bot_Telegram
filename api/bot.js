@@ -17,8 +17,12 @@ export default async function handler(req, res) {
     const chatId = msg.chat.id;
 
     try {
-        // 1. Menangani Gambar (QR Code)
-        if (msg.photo) {
+        // 1. Menangani Command /start
+        if (msg.text && msg.text.startsWith('/start')) {
+            await bot.sendMessage(chatId, 'Halo! Silakan upload foto QR Code Anda terlebih dahulu.');
+        }
+        // 2. Menangani Gambar (QR Code)
+        else if (msg.photo) {
             const photo = msg.photo[msg.photo.length - 1];
             const fileLink = await bot.getFileLink(photo.file_id);
             const response = await fetch(fileLink);
