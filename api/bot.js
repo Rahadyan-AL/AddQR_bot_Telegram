@@ -4,6 +4,8 @@ const { PDFDocument } = require('pdf-lib');
 const { createClient } = require('@supabase/supabase-js');
 const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
+require.resolve('pdfjs-dist/legacy/build/pdf.worker.js');
+
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
