@@ -18,12 +18,15 @@ export default async function handler(req, res) {
     const chatId = msg.chat.id;
 
     try {
-        if (msg.text && msg.text.startsWith('/start')) {
+        if (msg.text) {
             await bot.sendMessage(chatId, 'Halo! Bot sudah aktif dan siap digunakan. Silakan upload foto QR Code Anda terlebih dahulu.');
         }
-        else if (msg.photo) {
-            const photo = msg.photo[msg.photo.length - 1];
-            const fileLink = await bot.getFileLink(photo.file_id);
+        // 2. Tangani QR Code (dikirim sebagai Foto ATAU File Gambar)
+        else if (msg.photo || (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/'))) {
+            // Ambil ID file tergantung cara user mengirimnya
+            const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
+            
+            const fileLink = await bot.getFileLink(fileId);
             const response = await fetch(fileLink);
             const buffer = await response.arrayBuffer();
             
@@ -32,8 +35,12 @@ export default async function handler(req, res) {
                 .upload('qr_code.jpg', buffer, { upsert: true });
                 
             if (error) throw error;
-            await bot.sendMessage(chatId, 'QR Code berhasil disimpan/diperbarui!');
+            
+            // Pesan konfirmasi QR
+            await bot.sendMessage(chatId, '✅ QR Code berhasil disimpan! Sekarang kirimkan file PDF-nya.');
         } 
+        
+        // 3. Tangani PDF
         else if (msg.document && msg.document.mime_type === 'application/pdf') {
             await bot.sendMessage(chatId, 'Memproses PDF...');
             
