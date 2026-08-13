@@ -12,35 +12,65 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(200).send('Bot berjalan.');
 
+    // --- TANGANI KLIK TOMBOL (CALLBACK QUERY) ---
+    if (req.body.callback_query) {
+        const callbackQuery = req.body.callback_query;
+        const chatId = callbackQuery.message.chat.id;
+        
+        if (callbackQuery.data === 'use_old') {
+            await bot.sendMessage(chatId, '✅ Sip! Silakan langsung kirimkan file PDF-nya.');
+        } else if (callbackQuery.data === 'upload_new') {
+            await bot.sendMessage(chatId, 'Silakan upload foto/file QR Code yang baru.');
+        }
+        
+        await bot.answerCallbackQuery(callbackQuery.id);
+        return res.status(200).send('OK');
+    }
+
     const msg = req.body.message;
     if (!msg) return res.status(200).send('OK');
 
     const chatId = msg.chat.id;
+    const userQrName = `qr_${chatId}.jpg`; // Nama file unik per user
 
     try {
+        // 1. TANGANI TEKS BEBAS / START
         if (msg.text) {
-            await bot.sendMessage(chatId, 'Halo! Bot sudah aktif dan siap digunakan. Silakan upload foto QR Code Anda terlebih dahulu.');
-        }
-        // 2. Tangani QR Code (dikirim sebagai Foto ATAU File Gambar)
+            // Cek apakah user sudah punya file QR di Supabase
+            const { data: files } = await supabase.storage.from('bot-data').list('', { search: userQrName });
+            const hasOldQR = files && files.length > 0;
+
+            if (hasOldQR) {
+                const options = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: 'Gunakan QR Lama', callback_data: 'use_old' }],
+                            [{ text: 'Upload QR Baru', callback_data: 'upload_new' }]
+                        ]
+                    }
+                };
+                await bot.sendMessage(chatId, 'Anda sudah memiliki QR Code yang tersimpan. Ingin pakai yang mana?', options);
+            } else {
+                await bot.sendMessage(chatId, 'Halo! Bot sudah aktif. Silakan upload foto/file QR Code Anda terlebih dahulu.');
+            }
+        } 
+        
+        // 2. TANGANI UPLOAD QR
         else if (msg.photo || (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/'))) {
-            // Ambil ID file tergantung cara user mengirimnya
             const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
-            
             const fileLink = await bot.getFileLink(fileId);
             const response = await fetch(fileLink);
             const buffer = await response.arrayBuffer();
             
             const { error } = await supabase.storage
                 .from('bot-data')
-                .upload('qr_code.jpg', buffer, { upsert: true });
+                .upload(userQrName, buffer, { upsert: true });
                 
             if (error) throw error;
-            
-            // Pesan konfirmasi QR
             await bot.sendMessage(chatId, '✅ QR Code berhasil disimpan! Sekarang kirimkan file PDF-nya.');
         } 
         
-        // 3. Tangani PDF
+        // 3. TANGANI PDF
         else if (msg.document && msg.document.mime_type === 'application/pdf') {
             await bot.sendMessage(chatId, 'Memproses PDF...');
             
@@ -48,26 +78,25 @@ export default async function handler(req, res) {
             const pdfRes = await fetch(pdfLink);
             const pdfBuffer = await pdfRes.arrayBuffer();
 
-            // 1. Lacak koordinat teks "Bioindustri"
             const dataUint8Array = new Uint8Array(pdfBuffer);
             const loadingTask = pdfjsLib.getDocument({ data: dataUint8Array });
             const pdfDocPdfjs = await loadingTask.promise;
             const pagePdfjs = await pdfDocPdfjs.getPage(1);
             const textContent = await pagePdfjs.getTextContent();
             
-            let targetY = 320; // Titik default jika teks tidak ditemukan
+            let targetY = 320; 
             for (const item of textContent.items) {
                 if (item.str && item.str.includes('Bioindustri')) {
-                    targetY = item.transform[5]; // Mengambil koordinat Y (vertikal)
+                    targetY = item.transform[5];
                     break;
                 }
             }
 
-            const { data, error } = await supabase.storage.from('bot-data').download('qr_code.jpg');
+            // Download QR spesifik milik user tersebut
+            const { data, error } = await supabase.storage.from('bot-data').download(userQrName);
             if (error) return bot.sendMessage(chatId, 'Upload foto QR Code terlebih dahulu.');
             const qrBuffer = await data.arrayBuffer();
 
-            // 2. Tempel QR di koordinat yang ditemukan
             const pdfDoc = await PDFDocument.load(pdfBuffer);
             let qrImage;
             try { qrImage = await pdfDoc.embedJpg(qrBuffer); } 
@@ -77,8 +106,8 @@ export default async function handler(req, res) {
             const { width } = firstPage.getSize();
 
             firstPage.drawImage(qrImage, { 
-                x: width - 85,    // Kolom tanda tangan di kanan
-                y: targetY - 5,   // Sejajar dengan baris teks
+                x: width - 85,
+                y: targetY - 15,
                 width: 22, 
                 height: 22 
             });
