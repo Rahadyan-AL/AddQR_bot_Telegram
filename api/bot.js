@@ -84,15 +84,15 @@ export default async function handler(req, res) {
             const pagePdfjs = await pdfDocPdfjs.getPage(1);
             const textContent = await pagePdfjs.getTextContent();
             
-            let targetY = 320; 
+            let targetY = null; 
             for (const item of textContent.items) {
-                if (item.str && item.str.includes('Bioindustri')) {
+                // Gunakan toLowerCase agar deteksi lebih kebal terhadap perubahan font/format
+                if (item.str && item.str.toLowerCase().includes('bioindustri')) {
                     targetY = item.transform[5];
                     break;
                 }
             }
 
-            // Download QR spesifik milik user tersebut
             const { data, error } = await supabase.storage.from('bot-data').download(userQrName);
             if (error) return bot.sendMessage(chatId, 'Upload foto QR Code terlebih dahulu.');
             const qrBuffer = await data.arrayBuffer();
@@ -103,13 +103,26 @@ export default async function handler(req, res) {
             catch (e) { qrImage = await pdfDoc.embedPng(qrBuffer); }
 
             const firstPage = pdfDoc.getPages()[0];
-            const { width } = firstPage.getSize();
+            const { width, height } = firstPage.getSize();
+
+            // Logika Penentuan Posisi
+            let finalY;
+            if (targetY !== null) {
+                // Jika teks PDF digital terbaca
+                finalY = targetY - 10; 
+            } else {
+                // Jika PDF murni hasil scan gambar (fallback persentase proporsional)
+                finalY = height * 0.380; 
+            }
+
+            // Gunakan persentase untuk X agar aman di ukuran kertas A4, F4, atau Letter
+            const finalX = width * 0.81; 
 
             firstPage.drawImage(qrImage, { 
-                x: width - 85,
-                y: targetY - 15,
-                width: 22, 
-                height: 22 
+                x: finalX,
+                y: finalY,
+                width: 25, // Sedikit dibesarkan agar proporsional
+                height: 25 
             });
 
             const pdfBytes = await pdfDoc.save();
