@@ -24,7 +24,7 @@ export default async function handler(req, res) {
             await bot.sendMessage(chatId, 'Sistem siap. Silakan upload foto/file QR Code Anda.');
         } 
         
-        // 2. TANGANI UPLOAD QR (Simpan sementara)
+        // 2. TANGANI UPLOAD QR
         else if (msg.photo || (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/'))) {
             const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
             const fileLink = await bot.getFileLink(fileId);
@@ -36,19 +36,17 @@ export default async function handler(req, res) {
                 .upload(userQrName, buffer, { upsert: true });
                 
             if (error) throw error;
-            await bot.sendMessage(chatId, '✅ QR Code diterima. Silakan kirim file PDF-nya.');
+            await bot.sendMessage(chatId, '✅ QR Code tersimpan! Sekarang kirimkan file PDF-nya.');
         } 
         
-        // 3. TANGANI PDF & RESET DATA
+        // 3. TANGANI PDF
         else if (msg.document && msg.document.mime_type === 'application/pdf') {
             await bot.sendMessage(chatId, 'Memproses PDF...');
             
-            // Download file
             const pdfLink = await bot.getFileLink(msg.document.file_id);
             const pdfRes = await fetch(pdfLink);
             const pdfBuffer = await pdfRes.arrayBuffer();
 
-            // Lacak Teks
             const dataUint8Array = new Uint8Array(pdfBuffer);
             const loadingTask = pdfjsLib.getDocument({ data: dataUint8Array });
             const pdfDocPdfjs = await loadingTask.promise;
@@ -63,12 +61,10 @@ export default async function handler(req, res) {
                 }
             }
 
-            // Ambil QR dari Supabase
             const { data, error } = await supabase.storage.from('bot-data').download(userQrName);
-            if (error) return bot.sendMessage(chatId, 'Sesi direset. Harap kirim ulang foto QR Code terlebih dahulu.');
+            if (error) return bot.sendMessage(chatId, 'Harap kirim ulang foto QR Code terlebih dahulu.');
             const qrBuffer = await data.arrayBuffer();
 
-            // Modifikasi PDF
             const pdfDoc = await PDFDocument.load(pdfBuffer);
             let qrImage;
             try { qrImage = await pdfDoc.embedJpg(qrBuffer); } 
@@ -89,18 +85,16 @@ export default async function handler(req, res) {
 
             const pdfBytes = await pdfDoc.save();
 
-            // Kirim Dokumen
             await bot.sendDocument(chatId, Buffer.from(pdfBytes), {}, { 
                 filename: msg.document.file_name || 'Output_Signed.pdf', 
                 contentType: 'application/pdf' 
             });
-
-            // OPTIMASI: Langsung hapus QR code pengguna dari Supabase setelah pemakaian
-            await supabase.storage.from('bot-data').remove([userQrName]);
+            
+            // Catatan: Baris penghapusan file (.remove) dihapus agar aman dari retry loop Vercel.
         }
     } catch (error) {
         console.error(error);
-        await bot.sendMessage(chatId, 'Terjadi kesalahan sistem atau file terlalu berat untuk diproses.');
+        await bot.sendMessage(chatId, 'Terjadi kesalahan sistem atau file terlalu berat.');
     }
 
     res.status(200).send('OK');
