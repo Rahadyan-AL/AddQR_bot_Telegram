@@ -12,50 +12,19 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(200).send('Bot berjalan.');
 
-    // --- TANGANI KLIK TOMBOL (CALLBACK QUERY) ---
-    if (req.body.callback_query) {
-        const callbackQuery = req.body.callback_query;
-        const chatId = callbackQuery.message.chat.id;
-        
-        if (callbackQuery.data === 'use_old') {
-            await bot.sendMessage(chatId, '✅ Sip! Silakan langsung kirimkan file PDF-nya.');
-        } else if (callbackQuery.data === 'upload_new') {
-            await bot.sendMessage(chatId, 'Silakan upload foto/file QR Code yang baru.');
-        }
-        
-        await bot.answerCallbackQuery(callbackQuery.id);
-        return res.status(200).send('OK');
-    }
-
     const msg = req.body.message;
     if (!msg) return res.status(200).send('OK');
 
     const chatId = msg.chat.id;
-    const userQrName = `qr_${chatId}.jpg`; // Nama file unik per user
+    const userQrName = `qr_${chatId}.jpg`;
 
     try {
-        // 1. TANGANI TEKS BEBAS / START
+        // 1. TANGANI TEKS
         if (msg.text) {
-            // Cek apakah user sudah punya file QR di Supabase
-            const { data: files } = await supabase.storage.from('bot-data').list('', { search: userQrName });
-            const hasOldQR = files && files.length > 0;
-
-            if (hasOldQR) {
-                const options = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: 'Gunakan QR Lama', callback_data: 'use_old' }],
-                            [{ text: 'Upload QR Baru', callback_data: 'upload_new' }]
-                        ]
-                    }
-                };
-                await bot.sendMessage(chatId, 'Anda sudah memiliki QR Code yang tersimpan. Ingin pakai yang mana?', options);
-            } else {
-                await bot.sendMessage(chatId, 'Halo! Bot sudah aktif. Silakan upload foto/file QR Code Anda terlebih dahulu.');
-            }
+            await bot.sendMessage(chatId, 'Sistem siap. Silakan upload foto/file QR Code Anda.');
         } 
         
-        // 2. TANGANI UPLOAD QR
+        // 2. TANGANI UPLOAD QR (Simpan sementara)
         else if (msg.photo || (msg.document && msg.document.mime_type && msg.document.mime_type.startsWith('image/'))) {
             const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
             const fileLink = await bot.getFileLink(fileId);
@@ -67,17 +36,19 @@ export default async function handler(req, res) {
                 .upload(userQrName, buffer, { upsert: true });
                 
             if (error) throw error;
-            await bot.sendMessage(chatId, '✅ QR Code berhasil disimpan! Sekarang kirimkan file PDF-nya.');
+            await bot.sendMessage(chatId, '✅ QR Code diterima. Silakan kirim file PDF-nya.');
         } 
         
-        // 3. TANGANI PDF
+        // 3. TANGANI PDF & RESET DATA
         else if (msg.document && msg.document.mime_type === 'application/pdf') {
             await bot.sendMessage(chatId, 'Memproses PDF...');
             
+            // Download file
             const pdfLink = await bot.getFileLink(msg.document.file_id);
             const pdfRes = await fetch(pdfLink);
             const pdfBuffer = await pdfRes.arrayBuffer();
 
+            // Lacak Teks
             const dataUint8Array = new Uint8Array(pdfBuffer);
             const loadingTask = pdfjsLib.getDocument({ data: dataUint8Array });
             const pdfDocPdfjs = await loadingTask.promise;
@@ -86,17 +57,18 @@ export default async function handler(req, res) {
             
             let targetY = null; 
             for (const item of textContent.items) {
-                // Gunakan toLowerCase agar deteksi lebih kebal terhadap perubahan font/format
                 if (item.str && item.str.toLowerCase().includes('bioindustri')) {
                     targetY = item.transform[5];
                     break;
                 }
             }
 
+            // Ambil QR dari Supabase
             const { data, error } = await supabase.storage.from('bot-data').download(userQrName);
-            if (error) return bot.sendMessage(chatId, 'Upload foto QR Code terlebih dahulu.');
+            if (error) return bot.sendMessage(chatId, 'Sesi direset. Harap kirim ulang foto QR Code terlebih dahulu.');
             const qrBuffer = await data.arrayBuffer();
 
+            // Modifikasi PDF
             const pdfDoc = await PDFDocument.load(pdfBuffer);
             let qrImage;
             try { qrImage = await pdfDoc.embedJpg(qrBuffer); } 
@@ -105,36 +77,30 @@ export default async function handler(req, res) {
             const firstPage = pdfDoc.getPages()[0];
             const { width, height } = firstPage.getSize();
 
-            // Logika Penentuan Posisi
-            let finalY;
-            if (targetY !== null) {
-                // Jika teks PDF digital terbaca
-                finalY = targetY - 10; 
-            } else {
-                // Jika PDF murni hasil scan gambar (fallback persentase proporsional)
-                finalY = height * 0.380; 
-            }
-
-            // Gunakan persentase untuk X agar aman di ukuran kertas A4, F4, atau Letter
+            const finalY = targetY !== null ? targetY - 10 : height * 0.380; 
             const finalX = width * 0.81; 
 
             firstPage.drawImage(qrImage, { 
                 x: finalX,
                 y: finalY,
-                width: 25, // Sedikit dibesarkan agar proporsional
+                width: 25, 
                 height: 25 
             });
 
             const pdfBytes = await pdfDoc.save();
 
+            // Kirim Dokumen
             await bot.sendDocument(chatId, Buffer.from(pdfBytes), {}, { 
                 filename: msg.document.file_name || 'Output_Signed.pdf', 
                 contentType: 'application/pdf' 
             });
+
+            // OPTIMASI: Langsung hapus QR code pengguna dari Supabase setelah pemakaian
+            await supabase.storage.from('bot-data').remove([userQrName]);
         }
     } catch (error) {
         console.error(error);
-        await bot.sendMessage(chatId, 'Terjadi kesalahan saat memproses dokumen.');
+        await bot.sendMessage(chatId, 'Terjadi kesalahan sistem atau file terlalu berat untuk diproses.');
     }
 
     res.status(200).send('OK');
